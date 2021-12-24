@@ -1,2 +1,2 @@
 # dns-client
-DNS 客户端
+发送 DNS 报文的小工具
