@@ -1,138 +1,51 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
-	"log"
+	"errors"
+	"fmt"
+	"github.com/miekg/dns"
+	"github.com/spf13/cobra"
 	"net"
-	"strings"
 )
 
-type Header struct {
-	TransactionID uint16
-	Flags         uint16
-	Questions     uint16
-	AnswerRRs     uint16
-	AuthorityRRs  uint16
-	AdditionalRRs uint16
-}
-
-func NewHeader() Header {
-	return Header{
-		TransactionID: 0xFFFF,
-		Flags:         0<<15 + 0<<11 + 0<<10 + 0<<9 + 1<<8 + 0<<7 + uint16(0),
-		Questions:     1,
-		AnswerRRs:     0,
-		AuthorityRRs:  0,
-		AdditionalRRs: 0,
-	}
-}
-
-type Query struct {
-	Type  uint16
-	Class uint16
-}
-
-func NewQuery() Query {
-	return Query{
-		Type:  1,
-		Class: 1,
-	}
-}
-
-type Message struct {
-	Header Header
-	Domain string
-	Query  Query
-	Target *net.UDPAddr
-}
-
-func NewMessage(domain string, target *net.UDPAddr) *Message {
-	return &Message{
-		Header: NewHeader(),
-		Domain: domain,
-		Query:  NewQuery(),
-		Target: target,
-	}
-}
-
-func parseDomain(domain string) ([]byte, error) {
-	var (
-		buf      bytes.Buffer
-		segments = strings.Split(domain, ".")
-	)
-
-	for _, segment := range segments {
-		err := binary.Write(&buf, binary.BigEndian, byte(len(segment)))
-		if err != nil {
-			return nil, err
-		}
-		err = binary.Write(&buf, binary.BigEndian, []byte(segment))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	err := binary.Write(&buf, binary.BigEndian, byte(0x00))
-	if err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
-}
-
-func (m Message) message() ([]byte, error) {
-	var buf bytes.Buffer
-	err := binary.Write(&buf, binary.BigEndian, m.Header)
-	if err != nil {
-		return nil, err
-	}
-	domain, err := parseDomain(m.Domain)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Write(&buf, binary.BigEndian, domain)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Write(&buf, binary.BigEndian, m.Query)
-	if err != nil {
-		return nil, err
-	}
-	err = binary.Write(&buf, binary.BigEndian, m.Query)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func (m Message) Send() error {
-	message, err := m.message()
+func start(cmd *cobra.Command, args []string) error {
+	host := cmd.Flag("host").Value.String()
+	port := cmd.Flag("port").Value.String()
+	domain := args[0]
+	client := new(dns.Client)
+	message := new(dns.Msg)
+	message.SetQuestion(dns.Fqdn(domain), dns.TypeA)
+	resp, _, err := client.Exchange(message, net.JoinHostPort(host, port))
 	if err != nil {
 		return err
 	}
-	conn, err := net.Dial("udp", m.Target.String())
-	if err != nil {
-		return err
+	if resp.Rcode != dns.RcodeSuccess {
+		return errors.New(fmt.Sprintf("invalid answer name %s after CNAME query for %s", domain, domain))
 	}
-	defer conn.Close()
-
-	_, err = conn.Write(message)
-	if err != nil {
-		return err
+	for _, answer := range resp.Answer {
+		fmt.Println(answer.String())
 	}
 	return nil
 }
 
-func main() {
-	message := NewMessage("www.baidu.com", &net.UDPAddr{
-		IP:   net.IPv4(223, 5, 5, 5),
-		Port: 53,
-	})
-
-	err := message.Send()
-	if err != nil {
-		log.Fatalln(err)
+func initCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:          "yxdns -s [SERVER] [DOMAIN]",
+		SilenceUsage: true,
+		Example:      "yxdns -s 192.168.1.2 xxx.yyy.zzz",
+		Short:        "yxdns is a dns client that can specify a DNS server.",
+		PreRunE:      cobra.ExactArgs(1),
+		RunE:         start,
 	}
-	log.Println("Successfully send...")
+}
+
+func setupRootCmd(cmd *cobra.Command) {
+	cmd.PersistentFlags().StringP("host", "H", "223.5.5.5", "DNS server eg. 223.5.5.5")
+	cmd.PersistentFlags().StringP("port", "p", "53", "DNS server eg. 53")
+}
+
+func main() {
+	cmd := initCommand()
+	setupRootCmd(cmd)
+	cmd.Execute()
 }
