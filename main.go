@@ -142,12 +142,13 @@ func resolve(cmd *cobra.Command, args []string) error {
 
 func initCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:          "gresolver -s [SERVER] [DOMAIN1 DOMAIN2 ...]",
-		SilenceUsage: true,
-		Example:      "gresolver -s 192.168.1.2 xxx.yyy.zzz",
-		Short:        "gresolver is a dns client that can specify a DNS server.",
-		PreRunE:      checkArgsAndFlags,
-		RunE:         resolve,
+		Use:                   "gresolver -H [SERVER] [DOMAIN]",
+		SilenceUsage:          true,
+		DisableFlagsInUseLine: true,
+		Example:               "gresolver -H 192.168.1.2 xxx.yyy.zzz",
+		Short:                 "gresolver is a dns client that can specify a DNS server.",
+		PreRunE:               checkArgsAndFlags,
+		RunE:                  resolve,
 	}
 }
 
